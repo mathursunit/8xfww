@@ -1,0 +1,67 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>8× Fun With Words — Sequence</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="stylesheet" href="css/style.css?v=1772" />
+</head>
+<body>
+  <header>
+    <div class="header-wrap">
+      <img class="logo" src="assets/img/logo.png?v=1767" alt="SunSar — 8× Fun With Words logo" />
+      <div class="text-block">
+        <p class="subtitle">Sequence Edition · Daily answers rotate at 8:00 AM ET</p>
+      </div>
+      <div class="theme-controls" role="group" aria-label="Theme">
+        <span class="label">Theme</span>
+        <div class="theme-group">
+          <label><input type="radio" name="theme" value="light"><span>Light</span></label>
+          <label><input type="radio" name="theme" value="dark"><span>Dark</span></label>
+        </div>
+      </div>
+    <div id="verBadge" style="position:fixed;top:10px;right:10px;font-size:12px;color:#666;background:rgba(255,255,255,0.85);border:1px solid #e6e6e6;border-radius:6px;padding:4px 8px;z-index:10000;">v3.0.1 · 1801</div>
+  </div>
+  
+<nav class="xui-toplinks" aria-label="Utility links">
+  <button id="xuiStatsBtn" class="xui-linkbtn" type="button">Stats</button>
+  <button id="xuiAboutBtn" class="xui-linkbtn" type="button">About</button>
+</nav>
+
+</header>
+
+  <main>
+    <div id="boardsWrap">
+      <div id="boards" aria-label="Eight word boards shown in four columns"></div>
+    </div>
+    <div id="hud">
+      <span id="status">Viewing <span id="boardNum">1</span> · Active <span id="activeNum">1</span></span>
+      <button id="resetBtn" aria-label="Reset game">Reset</button>
+    </div>
+    <div id="keyboard" aria-label="On-screen keyboard"></div>
+  </main>
+
+  <footer>
+    <div class="disclaimer">
+      Disclaimer: This is a fun project to learn coding and has no commercial value.
+      All rights are with the amazing Britannica only.
+    </div>
+    <small>Minimal Wordle-like UI · 5 letters · 15 tries · © You</small>
+  </footer>
+
+  <script src="assets/confetti.js?v=1772"></script>
+  <script src="js/game.js?v=1772"></script>
+
+<!-- xui Toast container -->
+<div id="xuiToast" class="xui-toast xui-hidden" aria-hidden="true">
+  <div class="xui-toast__panel" role="dialog" aria-modal="true" aria-labelledby="xuiToastTitle">
+    <button class="xui-toast__close" id="xuiToastClose" aria-label="Close">×</button>
+    <div id="xuiToastContent"></div>
+  </div>
+</div>
+
+  <script src="js/xui.js" defer></script>
+</body>
+</html>
