@@ -6,6 +6,8 @@
   const closeBtn = qs('#xuiToastClose');
   const statsBtn = qs('#xuiStatsBtn');
   const aboutBtn = qs('#xuiAboutBtn');
+  const helpBtn = qs('#helpBtn');
+  let currentMode = null;
 
   if (!toast || !content || !closeBtn || !statsBtn || !aboutBtn) return;
 
@@ -25,6 +27,7 @@
   toast.addEventListener('click', (e) => { if (e.target === toast) closeToast(); });
   closeBtn.addEventListener('click', closeToast);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !toast.classList.contains('xui-hidden')) closeToast(); });
+  document.addEventListener('xui-open-about', () => openAbout());
 
   const safeParseInt = (v, d=0) => {
     const n = parseInt(v, 10);
@@ -61,7 +64,8 @@
     else if(toast.dataset.mode==="stats" && !toast.classList.contains('xui-hidden')){ content.innerHTML = html; }
   }
 
-  aboutBtn.addEventListener('click', () => {
+  function openAbout(){
+    currentMode = 'about';
     openToast(`
       <h3 id="xuiToastTitle">About</h3>
       <p>Sequence mode gives you eight linked 5-letter boards. Solve one to unlock the next; each board allows 15 tries.</p>

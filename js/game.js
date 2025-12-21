@@ -32,6 +32,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   function etMidnightUTC(y,m,d) { return Date.UTC(y, m-1, d); }
   function dayIndexET() { const {year,month,day,hour} = getETParts(); const EPOCH=Date.UTC(2025,0,1); let t=etMidnightUTC(year,month,day); if(hour<8) t-=86400000; return Math.floor((t-EPOCH)/86400000); }
+  function safeJSONParse(str){
+    try{ return JSON.parse(str); }catch{ return null; }
+  }
 
   async function loadValidList() {
     try {
@@ -58,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const validList = await loadValidList();
     const dayIdx = dayIndexET();
     const ANSWERS = selectAnswers(validList);
+    const todayIndex = dayIndexET();
 
     let activeBoard=0, viewBoard=0, maxUnlocked=0;
     let state = createBlankState();
@@ -74,6 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.addEventListener("keydown",(e)=>{ const k=e.key; if(/^[a-z]$/i.test(k)) onLetter(k.toUpperCase()); else if(k==="Backspace") onBackspace(); else if(k==="Enter") onEnter(); });
     resetBtn?.addEventListener("click", resetGame);
+    ensureStatsForToday();
 
     function buildBoards(){
       boardsEl.innerHTML="";
@@ -117,14 +122,14 @@ document.addEventListener("DOMContentLoaded", () => {
     function boardEl(i){return boardsEl.children[i];}
 
     // NAVIGATION (view only)
-    function onNavClick(idx){ viewBoard=idx; updateStatus(); updateNavButtons(); boardEl(viewBoard).scrollIntoView({behavior:"smooth",block:"nearest"}); drawPreviewAll(); }
-    function updateNavButtons(){ const btns=keyboardEl.querySelectorAll('.krow-nav .key'); btns.forEach((b,i)=>{ b.classList.toggle('active', i===viewBoard); b.classList.toggle('solved', state[i]?.solved===true); }); }
+    function onNavClick(idx){ viewBoard=idx; updateStatus(); updateNavButtons(); boardEl(viewBoard).scrollIntoView({behavior:"smooth",block:"nearest"}); drawPreviewAll(); persistState(); }
+    function updateNavButtons(){ const btns=keyboardEl.querySelectorAll('.krow-nav .key'); btns.forEach((b,i)=>{ b.classList.toggle('active', i===viewBoard); b.classList.toggle('solved', state[i]?.solved===true); b.disabled = i>maxUnlocked; }); }
 
     // INPUT to active board only
     function onLetter(ch){ const s=cur(); if(s.solved) return; if(s.invalidRow===s.attempt) return; const row=s.rows[s.attempt]||""; if(row.length>=WORD_LEN) return; s.rows[s.attempt]=row+ch; renderRowActive(activeBoard,s.attempt); drawPreviewAll(); saveState(); }
     function onBackspace(){ const s=cur(); if(s.solved) return; let row=s.rows[s.attempt]||""; if(!row.length){ if(s.invalidRow===s.attempt){clearInvalidRow(activeBoard,s.attempt); s.invalidRow=-1;} drawPreviewAll(); saveState(); return; } s.rows[s.attempt]=row.slice(0,-1); renderRowActive(activeBoard,s.attempt); if(s.invalidRow===s.attempt){clearInvalidRow(activeBoard,s.attempt); s.invalidRow=-1;} drawPreviewAll(); saveState(); }
     function onEnter(){ 
-      const s=cur(); if(s.solved) return; if(s.invalidRow===s.attempt) return; 
+      const s=cur(); if(runFinished||s.solved) return; if(s.invalidRow===s.attempt) return; 
       const guess=(s.rows[s.attempt]||"").toUpperCase(); if(guess.length!==WORD_LEN) return; 
       if(!validSet.has(guess)){markInvalidRow(activeBoard,s.attempt); s.invalidRow=s.attempt; return;}
 
@@ -163,7 +168,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function markInvalidRow(bi,ri){ const b=boardEl(bi); const tiles=b.querySelectorAll(".tile"); const start=ri*WORD_LEN; for(let i=0;i<WORD_LEN;i++) tiles[start+i].classList.add("invalid"); }
     function clearInvalidRow(bi,ri){ const b=boardEl(bi); const tiles=b.querySelectorAll(".tile"); const start=ri*WORD_LEN; for(let i=0;i<WORD_LEN;i++) tiles[start+i].classList.remove("invalid"); }
     function evalGuess(guess,answer){ const res=Array(WORD_LEN).fill("absent"); const cnt={}; for(const ch of answer) cnt[ch]=(cnt[ch]||0)+1; for(let i=0;i<WORD_LEN;i++) if(guess[i]===answer[i]){ res[i]="correct"; cnt[guess[i]]--; } for(let i=0;i<WORD_LEN;i++) if(res[i]!=="correct"){ const ch=guess[i]; if((cnt[ch]||0)>0){ res[i]="present"; cnt[ch]--; } } return res; }
-    function paintRowColored(bi,ri,res){ const b=boardEl(bi); const tiles=b.querySelectorAll(".tile"); const start=ri*WORD_LEN; const word=state[bi].rows[ri]; for(let i=0;i<WORD_LEN;i++){ const t=tiles[start+i]; t.classList.remove("ghost"); t.textContent=word[i] || ""; t.classList.add("flip"); setTimeout(()=>{ t.classList.remove("flip"); t.classList.add(res[i]); },80+i*30); } }
+    function paintRowColored(bi,ri,res,instant=false){ const b=boardEl(bi); const tiles=b.querySelectorAll(".tile"); const start=ri*WORD_LEN; const word=state[bi].rows[ri]; for(let i=0;i<WORD_LEN;i++){ const t=tiles[start+i]; t.classList.remove("ghost"); t.textContent=word[i] || ""; if(instant){ t.classList.remove("flip"); t.classList.add(res[i]); } else { t.classList.add("flip"); setTimeout(()=>{ t.classList.remove("flip"); t.classList.add(res[i]); },80+i*30); } } }
     function paintRowGhost(bi,ri){ const s=state[bi]; const str=s.rows[ri]||""; setRowGhost(bi,ri,str,true); }
     function paintExistingAsColored(bi){ const s=state[bi]; const maxRow = s.solved ? s.attempt+1 : s.attempt; for(let r=0;r<maxRow;r++){ const guess=s.rows[r]; if(guess.length!==WORD_LEN) continue; const res=evalGuess(guess,ANSWERS[bi]); paintRowColored(bi,r,res); } renderRowActive(bi,s.attempt); }
     
@@ -184,10 +189,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if(bi===BOARD_COUNT-1 && window.launchConfetti){ window.launchConfetti(); }
         return true;
       }
+      return false;
     }
-    return false;
-  }
-function updateKeyboard(guess,res){ for(let i=0;i<WORD_LEN;i++){ const ch=guess[i]; const k=findKey(ch); if(!k) continue; if(res[i]==="correct"){k.classList.remove("present","absent");k.classList.add("correct");} else if(res[i]==="present"&&!k.classList.contains("correct")){k.classList.remove("absent");k.classList.add("present");} else if(!k.classList.contains("correct")&&!k.classList.contains("present")){k.classList.add("absent");} } }
+    function updateKeyboard(guess,res){ for(let i=0;i<WORD_LEN;i++){ const ch=guess[i]; const k=findKey(ch); if(!k) continue; if(res[i]==="correct"){k.classList.remove("present","absent");k.classList.add("correct");} else if(res[i]==="present"&&!k.classList.contains("correct")){k.classList.remove("absent");k.classList.add("present");} else if(!k.classList.contains("correct")&&!k.classList.contains("present")){k.classList.add("absent");} } }
     function findKey(ch){ return Array.from(keyboardEl.querySelectorAll(".key")).find(k=>k.textContent===ch)||null; }
 
     function confettiBurstForBoard(bi){

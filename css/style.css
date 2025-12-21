@@ -32,6 +32,8 @@ main{width:min(1200px,96vw);display:flex;flex-direction:column;gap:12px;flex:1}
 .tile.ghost{background:var(--ghost)!important;color:#111!important;border-color:var(--ghost-border)!important}
 #hud{display:flex;align-items:center;justify-content:space-between;margin:0 auto;max-width:760px;padding:0 6px}
 #status{font-weight:700}
+.hud-actions{display:flex;align-items:center;gap:8px}
+.hud-actions .xui-linkbtn{padding:8px 10px}
 #resetBtn{padding:8px 12px;border-radius:8px;border:1px solid #ddd;background:#fff;color:#000;cursor:pointer}
 #keyboard{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(760px,100vw);background:var(--kbd-bg-grad);padding:8px 6px 16px;display:flex;flex-direction:column;gap:6px;justify-content:center;margin:0 auto;z-index:10;border-top:1px solid #e8e8e8}
 .krow{display:flex;gap:6px;justify-content:center}
