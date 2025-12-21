@@ -22,13 +22,13 @@
           <label><input type="radio" name="theme" value="dark"><span>Dark</span></label>
         </div>
       </div>
-    <div id="verBadge" style="position:fixed;top:10px;right:10px;font-size:12px;color:#666;background:rgba(255,255,255,0.85);border:1px solid #e6e6e6;border-radius:6px;padding:4px 8px;z-index:10000;">v3.0.1 · 1801</div>
-  </div>
-  
-<nav class="xui-toplinks" aria-label="Utility links">
-  <button id="xuiStatsBtn" class="xui-linkbtn" type="button">Stats</button>
-  <button id="xuiAboutBtn" class="xui-linkbtn" type="button">About</button>
-</nav>
+      <div id="verBadge" style="position:fixed;top:10px;right:10px;font-size:12px;color:#666;background:rgba(255,255,255,0.85);border:1px solid #e6e6e6;border-radius:6px;padding:4px 8px;z-index:10000;">v3.0.1 · 1801</div>
+    </div>
+    
+    <nav class="xui-toplinks" aria-label="Utility links">
+      <button id="xuiStatsBtn" class="xui-linkbtn" type="button">Stats</button>
+      <button id="xuiAboutBtn" class="xui-linkbtn" type="button">About / How to play</button>
+    </nav>
 
 </header>
 
@@ -38,7 +38,10 @@
     </div>
     <div id="hud">
       <span id="status">Viewing <span id="boardNum">1</span> · Active <span id="activeNum">1</span></span>
-      <button id="resetBtn" aria-label="Reset game">Reset</button>
+      <div class="hud-actions">
+        <button id="helpBtn" class="xui-linkbtn" type="button">How to play</button>
+        <button id="resetBtn" aria-label="Reset game">Reset</button>
+      </div>
     </div>
     <div id="keyboard" aria-label="On-screen keyboard"></div>
   </main>

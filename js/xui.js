@@ -6,6 +6,8 @@
   const closeBtn = qs('#xuiToastClose');
   const statsBtn = qs('#xuiStatsBtn');
   const aboutBtn = qs('#xuiAboutBtn');
+  const helpBtn = qs('#helpBtn');
+  let currentMode = null;
 
   if (!toast || !content || !closeBtn || !statsBtn || !aboutBtn) return;
 
@@ -18,11 +20,13 @@
   function closeToast() {
     toast.classList.add('xui-hidden');
     toast.setAttribute('aria-hidden', 'true');
+    currentMode = null;
   }
 
   toast.addEventListener('click', (e) => { if (e.target === toast) closeToast(); });
   closeBtn.addEventListener('click', closeToast);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !toast.classList.contains('xui-hidden')) closeToast(); });
+  document.addEventListener('xui-open-about', () => openAbout());
 
   const safeParseInt = (v, d=0) => {
     const n = parseInt(v, 10);
@@ -40,8 +44,9 @@
     }
   }
 
-  statsBtn.addEventListener('click', () => {
+  function renderStats(){
     const { solved, tries, best, streak } = getTodayStats();
+    currentMode = 'stats';
     openToast(`
       <h3 id="xuiToastTitle">Today’s Stats</h3>
       <div class="xui-kv" role="table">
@@ -51,13 +56,27 @@
         <div role="row"><strong>Current streak</strong></div><div role="cell">${streak || 0}</div>
       </div>
     `);
-  });
+  }
 
-  aboutBtn.addEventListener('click', () => {
+  function openAbout(){
+    currentMode = 'about';
     openToast(`
-      <h3 id="xuiToastTitle">About</h3>
-      <p>Disclaimer: This is a fun project to learn coding and has no commercial value.
-      All rights are with the amazing Britannica only.</p>
+      <h3 id="xuiToastTitle">About & How to Play</h3>
+      <p class="xui-subtle">Minimal Wordle-like, 8 chained boards, 5 letters, 15 tries per board.</p>
+      <ol class="xui-steps">
+        <li>Type or tap to enter guesses; Enter submits, ⌫ deletes. Physical keyboards work on desktop; tap buttons on mobile.</li>
+        <li>Your guess ghosts onto every unsolved board so you can mirror progress before each board unlocks.</li>
+        <li>Solve or exhaust a board to unlock the next one. Board numbers let you jump around.</li>
+        <li>You get 15 rows per board. Tile colors match Wordle: green correct, yellow present, gray absent.</li>
+        <li>Daily answers rotate at 8:00 AM ET. Stats and in-progress boards reset to the new day automatically.</li>
+      </ol>
+      <p>Disclaimer: This is a fun project to learn coding and has no commercial value. All rights are with the amazing Britannica only.</p>
     `);
-  });
+  }
+
+  statsBtn.addEventListener('click', renderStats);
+  aboutBtn.addEventListener('click', openAbout);
+  helpBtn?.addEventListener('click', openAbout);
+
+  document.addEventListener('xui-stats-updated', () => { if(!toast.classList.contains('xui-hidden') && currentMode==='stats') renderStats(); });
 })();
