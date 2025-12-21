@@ -5,8 +5,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const MAX_ROWS = 15;
   const BOARD_COUNT = 8;
   const VALID_TXT_URL = "assets/valid_words.txt?v=" + VERSION;
-  const STORAGE_KEY = "8xfww-state";
-  const STATS_KEY = "8xfww-stats";
+  const STORAGE_STATE_KEY = "8xfww-state";
+  const STATS_KEYS = {
+    solved: "x-solved",
+    tries: "x-tries",
+    best: "x-best",
+    streak: "x-streak",
+    day: "x-day"
+  };
 
   (function initTheme(){
     try{
@@ -53,11 +59,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   (async function init(){
     const validList = await loadValidList();
+    const dayIdx = dayIndexET();
     const ANSWERS = selectAnswers(validList);
     const todayIndex = dayIndexET();
 
-    let activeBoard=0, viewBoard=0, maxUnlocked=0, runFinished=false;
-    let state = ANSWERS.map(()=>({rows:Array(MAX_ROWS).fill(""),attempt:0,solved:false,invalidRow:-1}));
+    let activeBoard=0, viewBoard=0, maxUnlocked=0;
+    let state = createBlankState();
+    let stats = loadStats(dayIdx);
 
     const boardsEl=document.getElementById("boards");
     const keyboardEl=document.getElementById("keyboard");
@@ -66,11 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetBtn=document.getElementById("resetBtn");
     const validSet = new Set(validList);
 
-    hydrateFromStorage();
-
-    buildBoards(); buildKeyboard();
-    renderAllBoards(true);
-    updateLockUI(); updateStatus(); updateNavButtons(); drawPreviewAll(); persistState();
+    buildBoards(); buildKeyboard(); hydrateStateIfAvailable(); updateLockUI(); updateStatus(); updateNavButtons(); drawPreviewAll(); saveState(); saveStats();
 
     window.addEventListener("keydown",(e)=>{ const k=e.key; if(/^[a-z]$/i.test(k)) onLetter(k.toUpperCase()); else if(k==="Backspace") onBackspace(); else if(k==="Enter") onEnter(); });
     resetBtn?.addEventListener("click", resetGame);
@@ -89,7 +93,13 @@ document.addEventListener("DOMContentLoaded", () => {
     function buildKeyboard(){
       keyboardEl.innerHTML="";
       const nav=document.createElement("div"); nav.className="krow krow-nav";
-      for (let i=1;i<=BOARD_COUNT;i++){ const k=mk("button","key",String(i)); k.dataset.idx=String(i-1); k.type="button"; k.title="Jump to board "+i; k.setAttribute("aria-label","Jump to board "+i); k.addEventListener("click",()=>onNavClick(i-1)); nav.appendChild(k);}
+      for (let i=1;i<=BOARD_COUNT;i++){ 
+        const k=mkButton("key","Jump to board "+i,String(i));
+        k.dataset.idx=String(i-1);
+        k.addEventListener("click",()=>onNavClick(i-1));
+        k.addEventListener("keydown",(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); onNavClick(i-1);} });
+        nav.appendChild(k);
+      }
       const rows=["QWERTYUIOP","ASDFGHJKL","ZXCVBNM"];
       const r1=document.createElement("div"); r1.className="krow";
       const r2=document.createElement("div"); r2.className="krow";
@@ -101,8 +111,13 @@ document.addEventListener("DOMContentLoaded", () => {
       r3.appendChild(mkKey("⌫","wide"));
       keyboardEl.append(nav,r1,r2,r3);
     }
-    function mkKey(label,extra){ const key=mk("button","key"+(extra?" "+extra:""),label); key.type="button"; key.setAttribute("aria-label", label==="ENTER"?"Submit guess":(label==="⌫"?"Backspace":label)); key.addEventListener("click",()=>{ if(label==="ENTER") onEnter(); else if(label==="⌫") onBackspace(); else onLetter(label); }); return key; }
-    function mk(tag,cls,txt){ const el=document.createElement(tag); el.className=cls; el.textContent=txt; return el;}
+    function mkKey(label,extra){ 
+      const key=mkButton("key"+(extra?" "+extra:""), label==="ENTER"?"Submit guess":(label==="⌫"?"Backspace":`Letter ${label}`), label); 
+      key.addEventListener("click",()=>{ if(label==="ENTER") onEnter(); else if(label==="⌫") onBackspace(); else onLetter(label); }); 
+      key.addEventListener("keydown",(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); if(label==="ENTER") onEnter(); else if(label==="⌫") onBackspace(); else onLetter(label);} }); 
+      return key; 
+    }
+    function mkButton(cls,aria,txt){ const el=document.createElement("button"); el.className=cls; el.type="button"; el.setAttribute("aria-label",aria); el.textContent=txt; return el;}
     function cur(){return state[activeBoard];}
     function boardEl(i){return boardsEl.children[i];}
 
@@ -111,8 +126,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateNavButtons(){ const btns=keyboardEl.querySelectorAll('.krow-nav .key'); btns.forEach((b,i)=>{ b.classList.toggle('active', i===viewBoard); b.classList.toggle('solved', state[i]?.solved===true); b.disabled = i>maxUnlocked; }); }
 
     // INPUT to active board only
-    function onLetter(ch){ const s=cur(); if(runFinished||s.solved) return; if(s.invalidRow===s.attempt) return; const row=s.rows[s.attempt]||""; if(row.length>=WORD_LEN) return; s.rows[s.attempt]=row+ch; renderRowActive(activeBoard,s.attempt); persistState(); drawPreviewAll(); }
-    function onBackspace(){ const s=cur(); if(runFinished||s.solved) return; let row=s.rows[s.attempt]||""; if(!row.length){ if(s.invalidRow===s.attempt){clearInvalidRow(activeBoard,s.attempt); s.invalidRow=-1;} drawPreviewAll(); persistState(); return; } s.rows[s.attempt]=row.slice(0,-1); renderRowActive(activeBoard,s.attempt); if(s.invalidRow===s.attempt){clearInvalidRow(activeBoard,s.attempt); s.invalidRow=-1;} persistState(); drawPreviewAll(); }
+    function onLetter(ch){ const s=cur(); if(s.solved) return; if(s.invalidRow===s.attempt) return; const row=s.rows[s.attempt]||""; if(row.length>=WORD_LEN) return; s.rows[s.attempt]=row+ch; renderRowActive(activeBoard,s.attempt); drawPreviewAll(); saveState(); }
+    function onBackspace(){ const s=cur(); if(s.solved) return; let row=s.rows[s.attempt]||""; if(!row.length){ if(s.invalidRow===s.attempt){clearInvalidRow(activeBoard,s.attempt); s.invalidRow=-1;} drawPreviewAll(); saveState(); return; } s.rows[s.attempt]=row.slice(0,-1); renderRowActive(activeBoard,s.attempt); if(s.invalidRow===s.attempt){clearInvalidRow(activeBoard,s.attempt); s.invalidRow=-1;} drawPreviewAll(); saveState(); }
     function onEnter(){ 
       const s=cur(); if(runFinished||s.solved) return; if(s.invalidRow===s.attempt) return; 
       const guess=(s.rows[s.attempt]||"").toUpperCase(); if(guess.length!==WORD_LEN) return; 
@@ -124,13 +139,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if(!sb.rows[sb.attempt]) sb.rows[sb.attempt]=guess; paintRowGhost(bi,sb.attempt); if(bi!==activeBoard) sb.attempt++; 
       }
 
-      const answer=ANSWERS[activeBoard]; const res=evalGuess(guess,answer); paintRowColored(activeBoard,s.attempt,res); updateKeyboard(guess,res);
-      incrementTries();
+      const answer=ANSWERS[activeBoard]; const res=evalGuess(guess,answer); paintRowColored(activeBoard,s.attempt,res); updateKeyboard(guess,res); stats.tries += 1; 
+      const triesForBoard = s.attempt+1;
 
-      if(guess===answer){ s.solved=true; s.attempt=Math.min(s.attempt+1,MAX_ROWS); confettiBurstForBoard(activeBoard); updateStatsAfterSolve(); updateNavButtons(); if(activeBoard===BOARD_COUNT-1){ if(window.launchConfetti) window.launchConfetti(); finalizeRun(state.every(b=>b.solved)); } else unlockNext(); }
-      else { s.attempt++; if(s.attempt>=MAX_ROWS){ unlockNext(); if(activeBoard===BOARD_COUNT-1) finalizeRun(state.every(b=>b.solved)); } }
-      persistState();
-      drawPreviewAll(); 
+      if(guess===answer){ 
+        s.solved=true; 
+        recordSolvedBoard(triesForBoard);
+        confettiBurstForBoard(activeBoard); 
+        updateNavButtons(); if(activeBoard===BOARD_COUNT-1){ if(window.launchConfetti) window.launchConfetti(); } else unlockNext(); 
+      }
+      else { s.attempt++; if(s.attempt>=MAX_ROWS) unlockNext(); }
+      drawPreviewAll(); saveState(); saveStats(); window.xuiUpdateStatsToast?.();
     }
 
     // Preview while typing: mirror partial word to other boards' current rows in ghost
@@ -151,27 +170,24 @@ document.addEventListener("DOMContentLoaded", () => {
     function evalGuess(guess,answer){ const res=Array(WORD_LEN).fill("absent"); const cnt={}; for(const ch of answer) cnt[ch]=(cnt[ch]||0)+1; for(let i=0;i<WORD_LEN;i++) if(guess[i]===answer[i]){ res[i]="correct"; cnt[guess[i]]--; } for(let i=0;i<WORD_LEN;i++) if(res[i]!=="correct"){ const ch=guess[i]; if((cnt[ch]||0)>0){ res[i]="present"; cnt[ch]--; } } return res; }
     function paintRowColored(bi,ri,res,instant=false){ const b=boardEl(bi); const tiles=b.querySelectorAll(".tile"); const start=ri*WORD_LEN; const word=state[bi].rows[ri]; for(let i=0;i<WORD_LEN;i++){ const t=tiles[start+i]; t.classList.remove("ghost"); t.textContent=word[i] || ""; if(instant){ t.classList.remove("flip"); t.classList.add(res[i]); } else { t.classList.add("flip"); setTimeout(()=>{ t.classList.remove("flip"); t.classList.add(res[i]); },80+i*30); } } }
     function paintRowGhost(bi,ri){ const s=state[bi]; const str=s.rows[ri]||""; setRowGhost(bi,ri,str,true); }
-    function paintExistingAsColored(bi,instant=false){ const s=state[bi]; for(let r=0;r<s.attempt;r++){ const guess=s.rows[r]; if(!guess) continue; const res=evalGuess(guess,ANSWERS[bi]); paintRowColored(bi,r,res,instant); updateKeyboard(guess,res); } if(!s.solved && s.attempt<MAX_ROWS) renderRowActive(bi,s.attempt); }
+    function paintExistingAsColored(bi){ const s=state[bi]; const maxRow = s.solved ? s.attempt+1 : s.attempt; for(let r=0;r<maxRow;r++){ const guess=s.rows[r]; if(guess.length!==WORD_LEN) continue; const res=evalGuess(guess,ANSWERS[bi]); paintRowColored(bi,r,res); } renderRowActive(bi,s.attempt); }
     
-    function autoSolveIfPreGuessed(bi){
-      const s = state[bi];
-      const answer = ANSWERS[bi];
-      for(let r=0; r<=s.attempt; r++){
-        const g = (s.rows[r]||"").toUpperCase();
-        if(g.length===WORD_LEN && g===answer){
-          const res = evalGuess(g, answer);
-          paintRowColored(bi, r, res);
-          s.solved = true;
-          s.attempt = Math.max(s.attempt, r+1);
-          confettiBurstForBoard(bi); updateStatsAfterSolve(); updateNavButtons();
-          if(bi===BOARD_COUNT-1){
-            if(window.launchConfetti) window.launchConfetti();
-            finalizeRun(state.every(b=>b.solved));
-          } else {
-            unlockNext();
-          }
-          return true;
-        }
+  function autoSolveIfPreGuessed(bi){
+    const s = state[bi];
+    if(s.solved) return false;
+    const answer = ANSWERS[bi];
+    for(let r=0; r<=s.attempt; r++){
+      const g = (s.rows[r]||"").toUpperCase();
+      if(g.length===WORD_LEN && g===answer){
+        const res = evalGuess(g, answer);
+        paintRowColored(bi, r, res);
+        s.solved = true;
+        s.attempt = Math.max(s.attempt, r+1);
+        recordSolvedBoard(r+1);
+        saveStats(); window.xuiUpdateStatsToast?.();
+        confettiBurstForBoard(bi); updateNavButtons();
+        if(bi===BOARD_COUNT-1 && window.launchConfetti){ window.launchConfetti(); }
+        return true;
       }
       return false;
     }
@@ -188,143 +204,122 @@ document.addEventListener("DOMContentLoaded", () => {
       }catch(e){}
     }
 
-    function unlockNext(){
-      if(activeBoard<BOARD_COUNT-1){
-        activeBoard=activeBoard+1;
-        if(activeBoard>maxUnlocked) maxUnlocked=activeBoard;
-        viewBoard=activeBoard;
-        paintExistingAsColored(activeBoard);
-        const autoSolved = autoSolveIfPreGuessed(activeBoard);
-        updateLockUI(); updateStatus(); updateNavButtons();
-        boardEl(viewBoard).scrollIntoView({behavior:"smooth",block:"nearest"});
-        persistState();
-        if(autoSolved) checkRunComplete();
-      } else if(activeBoard===BOARD_COUNT-1){
-        checkRunComplete();
-      }
-    }
+    function unlockNext(){ if(activeBoard<BOARD_COUNT-1){ activeBoard=activeBoard+1; if(activeBoard>maxUnlocked) maxUnlocked=activeBoard; viewBoard=activeBoard; paintExistingAsColored(activeBoard);
+    const autoSolved = autoSolveIfPreGuessed(activeBoard); updateLockUI(); updateStatus(); updateNavButtons(); boardEl(viewBoard).scrollIntoView({behavior:"smooth",block:"nearest"}); saveState(); saveStats(); window.xuiUpdateStatsToast?.(); if(autoSolved && activeBoard<BOARD_COUNT-1) unlockNext(); } }
     function updateLockUI(){ for(let i=0;i<BOARD_COUNT;i++){ const b=boardEl(i); if(i<=maxUnlocked) b.classList.remove("locked"); else b.classList.add("locked"); } }
     function updateStatus(){ boardNumEl.textContent=(viewBoard+1); activeNumEl.textContent=(activeBoard+1); }
 
-    function checkRunComplete(){
-      if(runFinished) return;
-      const allFinished = state.every(s=>s.solved || s.attempt>=MAX_ROWS);
-      if(allFinished) finalizeRun(state.every(s=>s.solved));
+    function resetGame(){ state=createBlankState(); stats=resetStatsForDay(dayIdx, stats.best, stats.streak); activeBoard=0; viewBoard=0; maxUnlocked=0; for(let i=0;i<BOARD_COUNT;i++){ const b=boardEl(i); b.querySelectorAll(".tile").forEach(t=>{t.className="tile"; t.textContent="";}); } buildKeyboard(); updateLockUI(); updateStatus(); updateNavButtons(); drawPreviewAll(); saveState(); saveStats(); window.xuiUpdateStatsToast?.(); }
+
+    function createBlankState(){ return ANSWERS.map(()=>({rows:Array(MAX_ROWS).fill(""),attempt:0,solved:false,invalidRow:-1})); }
+
+    function hydrateStateIfAvailable(){
+      const saved = loadSavedState(dayIdx, ANSWERS);
+      if(!saved) return;
+      state = saved.state;
+      activeBoard = clampInt(saved.activeBoard,0,BOARD_COUNT-1);
+      viewBoard = clampInt(saved.viewBoard,0,BOARD_COUNT-1);
+      maxUnlocked = clampInt(saved.maxUnlocked,0,BOARD_COUNT-1);
+      renderFromState();
     }
 
-    function resetGame(){ for(let i=0;i<state.length;i++) state[i]={rows:Array(MAX_ROWS).fill(""),attempt:0,solved:false,invalidRow:-1}; activeBoard=0; viewBoard=0; maxUnlocked=0; runFinished=false; for(let i=0;i<BOARD_COUNT;i++){ const b=boardEl(i); b.querySelectorAll(".tile").forEach(t=>{t.className="tile"; t.textContent="";}); } buildKeyboard(); updateLockUI(); updateStatus(); updateNavButtons(); drawPreviewAll(); persistState(); }
-
-    function renderAllBoards(instant=false){
-      for(let i=0;i<BOARD_COUNT;i++){
-        paintExistingAsColored(i,instant);
-        if(state[i].invalidRow===state[i].attempt) markInvalidRow(i,state[i].attempt);
+    function renderFromState(){
+      for(let bi=0; bi<BOARD_COUNT; bi++){
+        const s=state[bi];
+        const bEl=boardEl(bi);
+        const tiles=bEl.querySelectorAll(".tile");
+        tiles.forEach(t=>{ t.className="tile"; t.textContent=""; });
+        const nonEmpty = s.rows.filter(r=>r && r.length>0).length;
+        const filledRows = Math.max(s.solved ? s.attempt+1 : s.attempt, nonEmpty);
+        for(let r=0; r<filledRows; r++){
+          const guess=s.rows[r];
+          if(!guess) continue;
+          if(guess.length===WORD_LEN){
+            const res=evalGuess(guess,ANSWERS[bi]);
+            paintRowColored(bi,r,res);
+            updateKeyboard(guess,res);
+          } else {
+            setRowGhost(bi,r,guess,true);
+          }
+        }
+        renderRowActive(bi,s.attempt);
+        if(s.invalidRow===s.attempt) markInvalidRow(bi,s.invalidRow);
       }
+      updateLockUI(); updateStatus(); updateNavButtons(); drawPreviewAll();
     }
 
-    function sanitizeBoardState(b){
-      const rows=Array.isArray(b.rows)?b.rows.slice(0,MAX_ROWS).map(v=>String(v||"").toUpperCase()):Array(MAX_ROWS).fill("");
-      while(rows.length<MAX_ROWS) rows.push("");
-      let attempt= Math.min(Math.max(parseInt(b.attempt,10)||0,0),MAX_ROWS);
-      const lastFilled = rows.reduce((idx,row,i)=> row?i:idx,-1);
-      if(lastFilled>=0 && attempt<lastFilled+1) attempt = Math.min(lastFilled+1, MAX_ROWS);
-      return {rows,attempt,solved:!!b.solved,invalidRow:Math.min(Math.max(parseInt(b.invalidRow,10)||-1,-1),MAX_ROWS-1)};
-    }
-
-    function hydrateFromStorage(){
-      const raw = safeJSONParse(localStorage.getItem(STORAGE_KEY));
-      if(!raw || raw.dayIndex!==todayIndex) { localStorage.removeItem(STORAGE_KEY); return null; }
-      if(!Array.isArray(raw.answers) || raw.answers.length!==ANSWERS.length || raw.answers.join(",")!==ANSWERS.join(",")) { localStorage.removeItem(STORAGE_KEY); return null; }
-      const savedState = Array.isArray(raw.state)?raw.state.map(sanitizeBoardState):[];
-      if(savedState.length!==BOARD_COUNT) return null;
-      state = savedState;
-      activeBoard = Math.min(Math.max(parseInt(raw.activeBoard,10)||0,0),BOARD_COUNT-1);
-      viewBoard = Math.min(Math.max(parseInt(raw.viewBoard,10)||0,0),BOARD_COUNT-1);
-      maxUnlocked = Math.min(Math.max(parseInt(raw.maxUnlocked,10)||0,0),BOARD_COUNT-1);
-      runFinished = !!raw.runFinished;
-      for(let i=1;i<BOARD_COUNT;i++){
-        if((state[i-1].solved || state[i-1].attempt>=MAX_ROWS) && maxUnlocked<i) maxUnlocked=i;
-      }
-      if(activeBoard>maxUnlocked) activeBoard=maxUnlocked;
-      if(viewBoard>maxUnlocked) viewBoard=maxUnlocked;
-      return raw;
-    }
-
-    function persistState(){
+    function loadSavedState(today, answers){
       try{
-        const payload={dayIndex:todayIndex, answers:ANSWERS, activeBoard, viewBoard, maxUnlocked, runFinished, state};
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      }catch(e){ console.warn("persist state", e); }
+        const raw = localStorage.getItem(STORAGE_STATE_KEY); if(!raw) return null;
+        const parsed = JSON.parse(raw);
+        if(parsed.day!==today) return null;
+        if(!Array.isArray(parsed.answers) || parsed.answers.length!==answers.length) return null;
+        return {
+          state: normalizeState(parsed.state),
+          activeBoard: parsed.activeBoard??0,
+          viewBoard: parsed.viewBoard??0,
+          maxUnlocked: parsed.maxUnlocked??0
+        };
+      }catch(e){ console.warn("state load", e); return null; }
     }
 
-    const toNum = (v,d=0)=>{ const n=parseInt(v,10); return Number.isFinite(n)?n:d; };
-
-    function ensureStatsForToday(){
-      const today=todayIndex;
-      const raw = safeJSONParse(localStorage.getItem(STATS_KEY)) || {};
-      let {dayIndex= today, solved=0, tries=0, best=0, streak=0, lastWinDay=null} = raw;
-      dayIndex = toNum(dayIndex, today);
-      solved = toNum(solved,0); tries=toNum(tries,0); best=toNum(best,0); streak=toNum(streak,0);
-      lastWinDay = Number.isFinite(toNum(lastWinDay,NaN)) ? toNum(lastWinDay,NaN) : null;
-      if(dayIndex!==today){
-        const carryStreak = (lastWinDay===dayIndex && dayIndex===today-1) || (lastWinDay===today-1);
-        streak = carryStreak ? streak : 0;
-        solved=0; tries=0; dayIndex=today;
-      }
-      saveStats({dayIndex, solved, tries, best, streak, lastWinDay});
-    }
-
-    function saveStats(stats){
+    function saveState(){
       try{
-        localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-        localStorage.setItem("x-solved", String(stats.solved||0));
-        localStorage.setItem("x-tries", String(stats.tries||0));
-        localStorage.setItem("x-best", String(stats.best||0));
-        localStorage.setItem("x-streak", String(stats.streak||0));
-        document.dispatchEvent(new CustomEvent("xui-stats-updated",{detail:stats}));
+        const payload={day:dayIdx, answers:ANSWERS, state, activeBoard, viewBoard, maxUnlocked};
+        localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(payload));
+      }catch(e){ console.warn("state save", e); }
+    }
+
+    function loadStats(today){
+      const safe = (k)=>{ const n=parseInt(localStorage.getItem(k),10); return Number.isFinite(n)?n:0; };
+      try{
+        const storedDay = parseInt(localStorage.getItem(STATS_KEYS.day),10);
+        const solved = safe(STATS_KEYS.solved);
+        const tries = safe(STATS_KEYS.tries);
+        const best = safe(STATS_KEYS.best);
+        const streakPrev = safe(STATS_KEYS.streak);
+        if(storedDay===today){ return { solved, tries, best, streak: streakPrev }; }
+        const streak = storedDay===today-1 && solved===BOARD_COUNT ? streakPrev : 0;
+        return { solved:0, tries:0, best, streak };
+      }catch(e){ console.warn("stats load", e); return { solved:0, tries:0, best:0, streak:0 }; }
+    }
+
+    function resetStatsForDay(today, carryBest, carryStreak){
+      return { solved:0, tries:0, best:carryBest||0, streak:carryStreak||0 };
+    }
+
+    function saveStats(){
+      try{
+        localStorage.setItem(STATS_KEYS.day, String(dayIdx));
+        localStorage.setItem(STATS_KEYS.solved, String(stats.solved||0));
+        localStorage.setItem(STATS_KEYS.tries, String(stats.tries||0));
+        if(stats.best) localStorage.setItem(STATS_KEYS.best, String(stats.best)); else localStorage.removeItem(STATS_KEYS.best);
+        localStorage.setItem(STATS_KEYS.streak, String(stats.streak||0));
       }catch(e){ console.warn("stats save", e); }
     }
 
-    function readStats(){
-      const raw = safeJSONParse(localStorage.getItem(STATS_KEY)) || {};
-      let stats = {dayIndex:toNum(raw.dayIndex,todayIndex), solved:toNum(raw.solved,0), tries:toNum(raw.tries,0), best:toNum(raw.best,0), streak:toNum(raw.streak,0), lastWinDay:Number.isFinite(toNum(raw.lastWinDay,NaN))?toNum(raw.lastWinDay,NaN):null};
-      if(stats.dayIndex!==todayIndex){
-        const carryStreak = (stats.lastWinDay===stats.dayIndex && stats.dayIndex===todayIndex-1) || (stats.lastWinDay===todayIndex-1);
-        stats = {...stats, dayIndex:todayIndex, solved:0, tries:0, streak: carryStreak ? stats.streak : 0};
-        saveStats(stats);
-      }
-      return stats;
-    }
-
-    function incrementTries(){
-      const stats = readStats();
-      stats.tries += 1;
-      saveStats(stats);
-    }
-
-    function updateStatsAfterSolve(){
-      const stats = readStats();
+    function recordSolvedBoard(triesUsed){
       stats.solved += 1;
-      stats.best = Math.max(stats.best||0, stats.solved);
-      saveStats(stats);
+      if(!stats.best || triesUsed < stats.best) stats.best = triesUsed;
+      if(stats.solved===BOARD_COUNT) stats.streak += 1;
     }
 
-    function finalizeRun(allSolved){
-      if(runFinished) return;
-      runFinished=true;
-      const stats=readStats();
-      stats.best = Math.max(stats.best||0, stats.solved);
-      if(allSolved){
-        if(stats.dayIndex===todayIndex){
-          if(stats.lastWinDay===todayIndex-1) stats.streak = (stats.streak||0)+1;
-          else if(stats.lastWinDay===todayIndex) stats.streak = stats.streak||1;
-          else stats.streak = (stats.solved>0)?1:0;
-          stats.lastWinDay = todayIndex;
-        }
-      } else {
-        stats.streak = 0;
-      }
-      saveStats(stats);
-      persistState();
+    function normalizeState(raw){
+      const base = ()=>({rows:Array(MAX_ROWS).fill(""),attempt:0,solved:false,invalidRow:-1});
+      const arr = Array.isArray(raw) ? raw.slice(0,BOARD_COUNT) : [];
+      while(arr.length<BOARD_COUNT) arr.push(base());
+      return arr.map((entry)=> {
+        const rows = Array.isArray(entry?.rows) ? entry.rows.slice(0,MAX_ROWS).map((r)=>String(r||"").toUpperCase().replace(/[^A-Z]/g,"").slice(0,WORD_LEN)) : Array(MAX_ROWS).fill("");
+        while(rows.length<MAX_ROWS) rows.push("");
+        return {
+          rows,
+          attempt: clampInt(entry?.attempt,0,MAX_ROWS-1),
+          solved: entry?.solved===true,
+          invalidRow: clampInt(entry?.invalidRow??-1,-1,MAX_ROWS-1)
+        };
+      });
     }
+
+    function clampInt(n,min,max){ const x=parseInt(n,10); if(!Number.isFinite(x)) return min; return Math.min(Math.max(x,min),max); }
   })().catch(err=>{ console.error(err); const s=document.getElementById("status"); if(s) s.textContent="Error loading game: "+err; });
 });

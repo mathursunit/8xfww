@@ -11,8 +11,9 @@
 
   if (!toast || !content || !closeBtn || !statsBtn || !aboutBtn) return;
 
-  function openToast(html) {
+  function openToast(html, mode="") {
     content.innerHTML = html;
+    toast.dataset.mode = mode;
     toast.classList.remove('xui-hidden');
     toast.setAttribute('aria-hidden', 'false');
     setTimeout(() => closeBtn.focus(), 0);
@@ -20,7 +21,7 @@
   function closeToast() {
     toast.classList.add('xui-hidden');
     toast.setAttribute('aria-hidden', 'true');
-    currentMode = null;
+    toast.dataset.mode = "";
   }
 
   toast.addEventListener('click', (e) => { if (e.target === toast) closeToast(); });
@@ -44,10 +45,13 @@
     }
   }
 
-  function renderStats(){
+  statsBtn.addEventListener('click', () => {
+    renderStatsToast(true);
+  });
+
+  function renderStatsToast(shouldOpen=false){
     const { solved, tries, best, streak } = getTodayStats();
-    currentMode = 'stats';
-    openToast(`
+    const html = `
       <h3 id="xuiToastTitle">Today’s Stats</h3>
       <div class="xui-kv" role="table">
         <div role="row"><strong>Boards solved</strong></div><div role="cell">${solved||0}/8</div>
@@ -55,28 +59,25 @@
         <div role="row"><strong>Best (all time)</strong></div><div role="cell">${best || '—'}</div>
         <div role="row"><strong>Current streak</strong></div><div role="cell">${streak || 0}</div>
       </div>
-    `);
+    `;
+    if(shouldOpen){ openToast(html, "stats"); }
+    else if(toast.dataset.mode==="stats" && !toast.classList.contains('xui-hidden')){ content.innerHTML = html; }
   }
 
   function openAbout(){
     currentMode = 'about';
     openToast(`
-      <h3 id="xuiToastTitle">About & How to Play</h3>
-      <p class="xui-subtle">Minimal Wordle-like, 8 chained boards, 5 letters, 15 tries per board.</p>
-      <ol class="xui-steps">
-        <li>Type or tap to enter guesses; Enter submits, ⌫ deletes. Physical keyboards work on desktop; tap buttons on mobile.</li>
-        <li>Your guess ghosts onto every unsolved board so you can mirror progress before each board unlocks.</li>
-        <li>Solve or exhaust a board to unlock the next one. Board numbers let you jump around.</li>
-        <li>You get 15 rows per board. Tile colors match Wordle: green correct, yellow present, gray absent.</li>
-        <li>Daily answers rotate at 8:00 AM ET. Stats and in-progress boards reset to the new day automatically.</li>
-      </ol>
-      <p>Disclaimer: This is a fun project to learn coding and has no commercial value. All rights are with the amazing Britannica only.</p>
-    `);
-  }
+      <h3 id="xuiToastTitle">About</h3>
+      <p>Sequence mode gives you eight linked 5-letter boards. Solve one to unlock the next; each board allows 15 tries.</p>
+      <ul>
+        <li>Your guess mirrors as a light “ghost” row on every unsolved board to help pattern-spotting.</li>
+        <li>Number keys at the top jump between boards; ENTER submits, ⌫ deletes.</li>
+        <li>Daily answers rotate at 8:00 AM ET. Progress and stats save automatically.</li>
+      </ul>
+      <p>Disclaimer: This is a fun project to learn coding and has no commercial value.
+      All rights are with the amazing Britannica only.</p>
+    `, "about");
+  });
 
-  statsBtn.addEventListener('click', renderStats);
-  aboutBtn.addEventListener('click', openAbout);
-  helpBtn?.addEventListener('click', openAbout);
-
-  document.addEventListener('xui-stats-updated', () => { if(!toast.classList.contains('xui-hidden') && currentMode==='stats') renderStats(); });
+  window.xuiUpdateStatsToast = () => renderStatsToast(false);
 })();
